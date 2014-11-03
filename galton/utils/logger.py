@@ -12,7 +12,7 @@ MODULE_NAME = __name__.split('.')[0]
 
 def setup_logging(log_config_file=op.join(op.dirname(__file__), 'logger.yml'),
                   log_default_level=LOG_LEVEL,
-                  env_key=MODULE_NAME + '_LOG_CFG'):
+                  env_key=MODULE_NAME.upper() + '_LOG_CFG'):
     """Setup logging configuration."""
     path = log_config_file
     value = os.getenv(env_key, None)

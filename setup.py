@@ -1,23 +1,12 @@
 #!/usr/bin/env python
 
 """
-<<<<<<< HEAD
 Galton
 ------
 
 Univariate Voxel Analysis and Correlations Tools
 
 """
-
-=======
-Boyle
------
-
-boyle is a set of tools for management and conversion of 
-clinical and neuroimaging data.
-
-"""
->>>>>>> b8028f9026506fa05a07277e7137301576e8d67e
 from __future__ import print_function
 
 import os.path as op
@@ -48,15 +37,9 @@ def read(*filenames, **kwargs):
 
 
 setup_dict = dict(
-<<<<<<< HEAD
-    name='darwin',
+    name='galton',
     version='0.1.0',
     description='Univariate Voxel Analysis and Correlations Tools',
-=======
-    name='boyle',
-    version='0.1.0',
-    description='Medical Image Conversion and Input/Output Tools',
->>>>>>> b8028f9026506fa05a07277e7137301576e8d67e
 
     license='BSD 3-Clause',
     author='Alexandre M. Savio',
@@ -69,10 +52,6 @@ setup_dict = dict(
     install_requires=get_requirements(*req_files),
 
     extra_files=['CHANGES.rst', 'LICENSE', 'README.rst'],
-
-    scripts=[op.join(script_path, 'convert.py'),
-             op.join(script_path, 'filetree.py'),
-             op.join(script_path, 'compare_id_sets.py'),],
 
     long_description=read('README.rst', 'CHANGES.rst'),
 

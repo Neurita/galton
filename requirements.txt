@@ -2,4 +2,10 @@
 numpy==1.9.0
 scipy==0.14.0
 cython==0.21
+<<<<<<< HEAD
 nibabel==1.3.0
+=======
+git+https://github.com/alexsavio/pydicom
+nibabel==1.3.0
+sympy==0.7.5
+>>>>>>> b8028f9026506fa05a07277e7137301576e8d67e

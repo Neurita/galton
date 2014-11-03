@@ -2,6 +2,7 @@ import logging
 from itertools import permutations
 
 import numpy as np
+import scipy.stats as stats
 from nipy.modalities.fmri.glm import GeneralLinearModel
 
 from boyle.nifti.read import vector_to_volume
@@ -12,7 +13,11 @@ log = logging.getLogger(__name__)
 
 
 class VBMAnalyzer(object):
-    """
+    """Voxel-Based Morphometry for group comparison
+
+    Parameters
+    ----------
+
 
     """
 
@@ -40,10 +45,13 @@ class VBMAnalyzer(object):
     def _create_group_regressors(labels):
         """
 
-        :param labels: iterable of label values
-        label values can be int or string
+        Parameters
+        ----------
+        labels: iterable of label values
+            label values can be int or string
 
-        :return:
+        Returns
+        -------
         np.ndarray of zeros and ones with as many columns
         as unique values in labels.
         """
@@ -58,16 +66,19 @@ class VBMAnalyzer(object):
         return group_regressors
 
     def _create_design_matrix(self, regressors=None):
-        """
-        Returns a VBM group comparison GLM design matrix.
+        """Returns a VBM group comparison GLM design matrix.
         Concatenating the design matrix corresponding to group comparison
         with given labels and the given regressors, if any.
 
-        :param labels: np.ndarray
+        Parameters
+        ----------
+        labels: np.ndarray
 
-        :param regressors: np.ndarray
+        regressors: np.ndarray
 
-        :return: np.ndarray
+        Returns
+        -------
+        np.ndarray
 
         """
         group_regressors = self._create_group_regressors(self._labels)
@@ -81,20 +92,20 @@ class VBMAnalyzer(object):
 
         return group_regressors
 
-
     def _extract_files_from_filedict(self, file_dict):
         """
 
-        :param file_dict: dict
-        file_dict is a dictionary: string/int -> list of file paths
+        Parameters
+        ----------
+        file_dict: dict
+            file_dict is a dictionary: string/int -> list of file paths
+            The key is a string or int representing the group name.
+            The values are lists of absolute paths to nifti files which represent
+            the subject files (GM or WM tissue volumes)
 
-        The key is a string or int representing the group name.
-        The values are lists of absolute paths to nifti files which represent
-        the subject files (GM or WM tissue volumes)
-
-        :param mask_file: str
-
-        :todo: give the option to do tissue segmentation
+        TODO
+        ----
+        Give the option to do tissue segmentation
         """
         classes = file_dict.keys()
         if len(classes) < 2:
@@ -120,11 +131,15 @@ class VBMAnalyzer(object):
     def _extract_data(self, file_dict, mask_file=None, smooth_mm=None,
                       smooth_mask=False):
         """
+        Parameters
+        ----------
+        file_dict: dict
 
-        :param file_dict:
-        :param mask_file:
-        :param smooth_mm:
-        :param smooth_mask:
+        mask_file: str
+
+        smooth_mm: int
+
+        smooth_mask: bool
         """
         self._smooth_mm = smooth_mm
         self._smooth_mask = smooth_mask
@@ -139,10 +154,15 @@ class VBMAnalyzer(object):
     @staticmethod
     def _nipy_glm(x, y):
         """
+        Parameters
+        ----------
+        x:
+        y:
 
-        :param x:
-        :param y:
-        :return:
+        Returns
+        -------
+        nipy.GeneralLinearModel
+
         """
         myglm = GeneralLinearModel(x)
         myglm.fit(y)
@@ -154,12 +174,14 @@ class VBMAnalyzer(object):
 
     def _create_group_contrasts(self, test_type='t'):
         """
+        Parameters
+        ----------
+        test_type: str
+            Choices: 't' or 'F'
 
-        :param test_type: str
-        Choices: 't' or 'F'
-
-        :return: list arrays
-        dict with of contrasts for group comparison
+        Returns
+        -------
+        list of arrays with contrasts for each group comparison
         """
         if test_type == 't':
             return self._create_ttest_contrast()
@@ -172,7 +194,9 @@ class VBMAnalyzer(object):
     def _create_Ftest_contrast(self):
         """
 
-        :return:
+        Returns
+        -------
+        list of arrays with contrasts for each group comparison
         """
         #create a list of arrays with [1, -1]
         #varying where the -1 is, for each group
@@ -194,7 +218,9 @@ class VBMAnalyzer(object):
     def _create_ttest_contrast(self):
         """
 
-        :return:
+        Returns
+        -------
+        list of arrays with contrasts for each group comparison
         """
         #create a list of arrays with [1, -1]
         #varying where the -1 is, for each group
@@ -217,23 +243,24 @@ class VBMAnalyzer(object):
         return contrasts
 
     def fit(self, file_dict, smooth_mm=4, mask_file=None, regressors=None):
-        """
+        """Fit the GLM model
 
-        :param file_dict: dict
-        file_dict is a dictionary: string/int -> list of file paths
+        Parameters
+        ----------
+        file_dict: dict
+            file_dict is a dictionary: string/int -> list of file paths
 
-        :param smooth_mm: int
-        gaussian kernel size (smooth_size in mm, not voxels)
+        smooth_mm: int or
+            gaussian kernel size (smooth_size in mm, not voxels)
+            The key is a string or int representing the group name.
+            The values are lists of absolute paths to nifti files which represent
+            the subject files (GM or WM tissue volumes)
 
-        The key is a string or int representing the group name.
-        The values are lists of absolute paths to nifti files which represent
-        the subject files (GM or WM tissue volumes)
+        mask_file: str
+            Path to a mask file of the same shape as the files in file_dict
 
-        :param mask_file: str
-        Path to a mask file of the same shape as the files in file_dict
-
-        :param regressors: np.array
-        Array of size [n_subjs x n_regressors]
+        regressors: np.array
+            Array of size [n_subjs x n_regressors]
 
         """
         try:
@@ -250,17 +277,20 @@ class VBMAnalyzer(object):
             raise
 
     def transform(self, contrast_type='t', correction_type='bonferroni'):
-        """
-        Apply GLM constrast comparing each group one vs. all.
+        """Apply GLM constrast comparing each group one vs. all.
 
-        :param contrast_type: string
-        Defines the type of contrast. See GeneralLinearModel.contrast help.
-        choices = {'t', 'F'}
+        Parameters
+        ----------
+        contrast_type: string
+            Defines the type of contrast. See GeneralLinearModel.contrast help.
+            choices = {'t', 'F'}
 
-        :param correction_type: string
-        choices = {'bonferroni', 'grf', 'fdr'}
+        correction_type: string
+            choices = {'bonferroni', 'rf', 'fdr'}
 
-        :return:
+        Returns
+        -------
+        P-Values volume results of the GLM.
         """
 
         #apply GLM
@@ -278,7 +308,7 @@ class VBMAnalyzer(object):
 
         if correction_type == 'bonferroni':
             self.bonferroni_correct()
-        elif correction_type == 'grf':
+        elif correction_type == 'rf':
             self.grf_correct()
         elif correction_type == 'fdr':
             self.randomise_correct()
@@ -296,7 +326,9 @@ class VBMAnalyzer(object):
 
     def bonferroni_correct(self, threshold=0.05):
         """
-        :param threshold
+        Parameters
+        ----------
+        threshold:
         """
         self._corrected_pvalues = []
         for contraster in self._contrasts:
@@ -317,12 +349,12 @@ class VBMAnalyzer(object):
         # pvalue005_c1=contrast1.p_value(0.005)
         # pvalue005_c2=contrast2.p_value(0.005)
 
-    def grf_correct(self):
-        print('For Gaussian Random Fields correction, please see:'
-              'http://nbviewer.ipython.org/github/jbpoline/bayfmri/blob/master/notebooks/0XX-random-fields.ipynb'
-              'and'
-              'http://imaging.mrc-cbu.cam.ac.uk/imaging/PrinciplesRandomFields')
-
+    def rf_correct(self):
+        """
+        Parameters
+        ----------
+        threshold:
+        """
         self._corrected_pvalues = []
         for contraster in self._contrasts:
             pvals = contraster.stat()
@@ -337,32 +369,7 @@ class VBMAnalyzer(object):
         pass
         #TODO
 
-    def save_result(self, file_path):
-        """
-        """
-        if self._corrected_pvalues is None:
-            log.error('The results list is empty. So not saving anything.')
 
-        raise NotImplementedError
-
-        #TODO
-        # hay que añadir FWE correction como es SPM
-        #
-        #
-        # namep1=os.path.join(outfolder, 'vbm_p0005c1.nii.gz')
-        # namep2=os.path.join(outfolder, 'vbm_p0005c2.nii.gz')
-        # p005c1=vector_to_volume(pvalue005_c1, mask_indices, mask_shape, dtype=float)
-        # p005c2=vector_to_volume(pvalue005_c2, mask_indices, mask_shape, dtype=float)
-        # save_niigz(p005c1, namep1, affine=None, header=None)
-        # save_niigz(p005c2, namep2, affine=None, header=
-
-    def to_pickle(self):
-        pass
-        #TODO
-
-    def to_hdf5(self):
-        pass
-        #TODO
 
 
 class VBMAnalyzer2(VBMAnalyzer):
@@ -516,7 +523,7 @@ if __name__ == '__main__':
     #get list of volume files
     file_dict, labels = get_files_for_comparison(gm_folder, comparison[1])
 
-    from macuto.analysis.vbm import VBMAnalyzer
+    from galton.vbm import VBMAnalyzer
     vbm = VBMAnalyzer()
     vbm._extract_data(file_dict, mask_file, smooth_mm)
     vbm._x = vbm._create_design_matrix()

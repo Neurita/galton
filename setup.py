@@ -26,9 +26,7 @@ LICENSE = 'new BSD'
 
 
 #long description
-def read(*filenames, **kwargs):
-    encoding = kwargs.get('encoding', 'utf-8')
-    sep = kwargs.get('sep', '\n')
+def read(*filenames, encoding='utf-8', sep='\n'):
     buf = []
     for filename in filenames:
         with io.open(filename, encoding=encoding) as f:

@@ -126,8 +126,7 @@ class VBMAnalyzer(object):
     #     # for idx, u in enumerate(unique):
     #     #     self._label_values[u] = idx
 
-    def _extract_data(self, file_dict, mask_file=None, smooth_mm=None,
-                      smooth_mask=False):
+    def _extract_data(self, file_dict, mask_file=None, smooth_mm=None, smooth_mask=False):
         """
         Parameters
         ----------
@@ -155,7 +154,7 @@ class VBMAnalyzer(object):
         ndims = len(self._mask_shape)
         self._fwhm = [smooth_mm] * ndims
         hdr, aff = get_nii_info(mask_file)
-        self._pixdim = np.diag(hdr.get_qform())[:ndims]
+        self._pixdim = np.abs(np.diag(hdr.get_qform())[:ndims])
 
     @staticmethod
     def _nipy_glm(x, y):
@@ -206,12 +205,12 @@ class VBMAnalyzer(object):
         #create a list of arrays with [1, -1]
         #varying where the -1 is, for each group
         if self.n_groups == 2:
-            contrasts = [ 1, -1]
+            contrasts = [[-1, 1]]
 
         #if there are 3 groups we have to
         # do permutations of [-1, 0, 1]
         elif self.n_groups == 3:
-            contrasts = [-1, 0, 1]
+            contrasts = [[-1, 0, 1]]
 
         else:
             log.error('Too many groups for contrasts: '
@@ -231,8 +230,8 @@ class VBMAnalyzer(object):
         #varying where the -1 is, for each group
         contrasts = []
         if self.n_groups == 2:
-            contrasts.append([ 1, -1])
             contrasts.append([-1,  1])
+            contrasts.append([ 1, -1])
 
         #if there are 3 groups we have to
         # do permutations of [-1, 0, 1]
@@ -293,7 +292,7 @@ class VBMAnalyzer(object):
 
         Returns
         -------
-        Corrected p-values volume results of the GLM.
+        Corrected z-score volume results of the GLM.
 
         See Also
         --------
@@ -325,20 +324,22 @@ class VBMAnalyzer(object):
                       '{0}.'.format(correction_type))
             raise NotImplementedError
 
-        pval_volumes = [vector_to_volume(corrp, self._mask_indices, self._mask_shape)
-                        for corrp in self._corrected_pvalues]
+        zscore_volumes = [vector_to_volume(corrp, self._mask_indices, self._mask_shape)
+                          for corrp in self._corrected_zscores]
 
-        return pval_volumes
+        return zscore_volumes
 
     def bonferroni_correct(self, threshold=0.05):
-        """
+        """Return Bonferroni corrected Z-Scores
+
         Parameters
         ----------
         threshold: float
         """
-        self._corrected_pvalues = []
+        self._corrected_zscores = []
         for contraster in self._contrasts:
-            self._corrected_pvalues.append(contraster.p_value(threshold))
+            corr_p = contraster.z_score(threshold)
+            self._corrected_zscores.append(corr_p)
 
         #contrast1 = self._nipy_glm.contrast(contrasts[0], contrast_type='t')
         #contrast2 = self._nipy_glm.contrast(contrasts[1], contrast_type='t')
@@ -355,8 +356,9 @@ class VBMAnalyzer(object):
         # pvalue005_c1=contrast1.p_value(0.005)
         # pvalue005_c2=contrast2.p_value(0.005)
 
-    def rf_correct(self, **kwargs):
-        """
+    def grf_correct(self, **kwargs):
+        """Return Gaussian Random Field corrected Z-Scores
+
         Parameters
         ----------
 
@@ -386,9 +388,10 @@ class VBMAnalyzer(object):
         kernel = kwargs.get('kernel', self._fwhm)
         alpha  = kwargs.get('alpha', 0.05)
 
-        self._corrected_pvalues = []
+        self._corrected_zscores = []
         for contraster in self._contrasts:
-            self._corrected_pvalues.append(rft_correct(contraster.p_value(), pixdim, kernel, alpha))
+            corr_p = rft_correct(contraster.z_score(0.0), pixdim, kernel, alpha)
+            self._corrected_zscores.append(corr_p)
 
     def randomise_correct(self):
         pass
@@ -498,7 +501,7 @@ if __name__ == '__main__':
 
         return file_dict, labels
 
-    fetch_oasis_subjects = True
+    fetch_oasis_subjects = False
     if not fetch_oasis_subjects:
         import socket
         hn = socket.gethostname()
@@ -549,10 +552,11 @@ if __name__ == '__main__':
     from galton.vbm import VBMAnalyzer
 
     vbm = VBMAnalyzer()
-    vbm.fit(file_dict, smooth_mm=smooth_mm, mask_file=mask_file,
-            regressors=None)
+    vbm.fit(file_dict, smooth_mm=smooth_mm, mask_file=mask_file, regressors=None)
 
-    corr_pval_vols = vbm.transform(contrast_type='t', correction_type='rf', alpha='0.04', kernel=[smooth_mm]*3)
+    corr_zval_vols = vbm.transform(contrast_type='F', correction_type='rf', alpha=0.05, fwhm=[smooth_mm]*3)
+    corr_zval_vols = vbm.transform(contrast_type='t', correction_type='rf', alpha=0.05, fwhm=[smooth_mm]*3)
+    corr_zval_vols = vbm.transform(contrast_type='t', correction_type='bonferroni')
 
     # contrast_type = 't'
     # contrasts = vbm._create_group_contrasts(contrast_type)

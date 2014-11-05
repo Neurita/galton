@@ -5,8 +5,10 @@ import numpy as np
 import scipy.stats as stats
 from nipy.modalities.fmri.glm import GeneralLinearModel
 
-from boyle.nifti.read import vector_to_volume
+from boyle.nifti.read import vector_to_volume, get_nii_info
 from boyle.nifti.sets import NiftiSubjectsSet
+
+from .random_fields import rft_correct
 
 
 log = logging.getLogger(__name__)
@@ -102,10 +104,6 @@ class VBMAnalyzer(object):
             The key is a string or int representing the group name.
             The values are lists of absolute paths to nifti files which represent
             the subject files (GM or WM tissue volumes)
-
-        TODO
-        ----
-        Give the option to do tissue segmentation
         """
         classes = file_dict.keys()
         if len(classes) < 2:
@@ -137,7 +135,7 @@ class VBMAnalyzer(object):
 
         mask_file: str
 
-        smooth_mm: int
+        smooth_mm: int or float
 
         smooth_mask: bool
         """
@@ -145,11 +143,19 @@ class VBMAnalyzer(object):
         self._smooth_mask = smooth_mask
         self._mask_file = mask_file
 
+        log.debug('Reading the data files.')
         self._extract_files_from_filedict(file_dict)
 
+        log.debug('Transforming the data into an array.')
         self._y, self._mask_indices, \
         self._mask_shape = self._subj_files.to_matrix(smooth_mm=self._smooth_mm,
                                                       smooth_mask=self._smooth_mask)
+
+        #setup parameters from image and smoothing info: FWHM and Voxel Dimensions in mm
+        ndims = len(self._mask_shape)
+        self._fwhm = [smooth_mm] * ndims
+        hdr, aff = get_nii_info(mask_file)
+        self._pixdim = np.diag(hdr.get_qform())[:ndims]
 
     @staticmethod
     def _nipy_glm(x, y):
@@ -193,7 +199,6 @@ class VBMAnalyzer(object):
 
     def _create_Ftest_contrast(self):
         """
-
         Returns
         -------
         list of arrays with contrasts for each group comparison
@@ -252,9 +257,6 @@ class VBMAnalyzer(object):
 
         smooth_mm: int or
             gaussian kernel size (smooth_size in mm, not voxels)
-            The key is a string or int representing the group name.
-            The values are lists of absolute paths to nifti files which represent
-            the subject files (GM or WM tissue volumes)
 
         mask_file: str
             Path to a mask file of the same shape as the files in file_dict
@@ -272,11 +274,12 @@ class VBMAnalyzer(object):
 
             #fit GeneralLinearModel
             self.glm_model = self._nipy_glm(self._x, self._y)
+
         except Exception as exc:
             log.exception('Error creating the data for the GLM.')
             raise
 
-    def transform(self, contrast_type='t', correction_type='bonferroni'):
+    def transform(self, contrast_type='t', correction_type='rf', **kwargs):
         """Apply GLM constrast comparing each group one vs. all.
 
         Parameters
@@ -290,7 +293,12 @@ class VBMAnalyzer(object):
 
         Returns
         -------
-        P-Values volume results of the GLM.
+        Corrected p-values volume results of the GLM.
+
+        See Also
+        --------
+        galton.random_fields.rft_correct for kwargs arguments if using 'rf' as correction type.
+
         """
 
         #apply GLM
@@ -303,7 +311,7 @@ class VBMAnalyzer(object):
 
         self._contrasts = []
         for contrast_vector in contrasts:
-            self._contrasts.append(self._nipy_glm.contrast(contrast_vector,
+            self._contrasts.append(self.glm_model.contrast(contrast_vector,
                                                            contrast_type=contrast_type))
 
         if correction_type == 'bonferroni':
@@ -317,9 +325,7 @@ class VBMAnalyzer(object):
                       '{0}.'.format(correction_type))
             raise NotImplementedError
 
-
-        pval_volumes = [vector_to_volume(corrp, self._mask_indices,
-                                         self._mask_shape)
+        pval_volumes = [vector_to_volume(corrp, self._mask_indices, self._mask_shape)
                         for corrp in self._corrected_pvalues]
 
         return pval_volumes
@@ -328,7 +334,7 @@ class VBMAnalyzer(object):
         """
         Parameters
         ----------
-        threshold:
+        threshold: float
         """
         self._corrected_pvalues = []
         for contraster in self._contrasts:
@@ -349,90 +355,107 @@ class VBMAnalyzer(object):
         # pvalue005_c1=contrast1.p_value(0.005)
         # pvalue005_c2=contrast2.p_value(0.005)
 
-    def rf_correct(self):
+    def rf_correct(self, **kwargs):
         """
         Parameters
         ----------
-        threshold:
+
+        **kwargs:
+            Arbitrary keyword arguments.
+
+            pixdim: array/list of ints or floats
+                Size in milimeters of the voxel, e.g., [2, 2, 2] if the voxel size is 2mm x 2mm x 2mm.
+
+            kernel: array/list of ints or floats
+                Size in milimiters of the FWHM smooothing kernel.
+
+            alpha: float
+                False positive rate threshold for correction.
+
+        Notes
+        -----
+        The **kwargs arguments:
+        - pixdim, as voxel dimensions in mm, are obtained from the input data.
+        - kernel, as Smoothing Kernel FWHM size, and alpha must be given by the user.
+
+        See Also
+        --------
+        galton.random_fields.rft_correct
         """
+        pixdim = kwargs.get('pixdim', self._pixdim)
+        kernel = kwargs.get('kernel', self._fwhm)
+        alpha  = kwargs.get('alpha', 0.05)
+
         self._corrected_pvalues = []
         for contraster in self._contrasts:
-            pvals = contraster.stat()
-
-
-            self._corrected_pvalues.append(pvals)
-
-        pass
-        #TODO
+            self._corrected_pvalues.append(rft_correct(contraster.p_value(), pixdim, kernel, alpha))
 
     def randomise_correct(self):
         pass
         #TODO
 
 
-
-
-class VBMAnalyzer2(VBMAnalyzer):
-    """
-
-    """
-    #TODO
-
-    # http://nbviewer.ipython.org/github/practical-neuroimaging/pna-notebooks/blob/master/GLM_t_F.ipynb
-    @staticmethod
-    def _t_test(betah, resid, X):
-        """
-        test the parameters betah one by one - this assumes they are
-        estimable (X full rank)
-
-        betah : (p, 1) estimated parameters
-        resid : (n, 1) estimated residuals
-        X : design matrix
-        """
-
-        RSS = sum((resid)**2)
-        n = resid.shape[0]
-        q = np.linalg.matrix_rank(X)
-        df = n-q
-        MRSS = RSS/df
-
-        XTX = np.linalg.pinv(X.T.dot(X))
-
-        tval = np.zeros_like(betah)
-        pval = np.zeros_like(betah)
-
-        for idx, beta in enumerate(betah):
-            c = np.zeros_like(betah)
-            c[idx] = 1
-            t_num = c.T.dot(betah)
-            SE = np.sqrt(MRSS* c.T.dot(XTX).dot(c))
-            tval[idx] = t_num / SE
-
-            pval[idx] = 1.0 - t.cdf(tval[idx], df)
-
-        return tval, pval
-
-    @staticmethod
-    def _glm(x, y):
-        """A GLM function returning the estimated parameters and residuals
-
-        :param X:
-        :param Y:
-        :return:
-        """
-        betah   =  np.linalg.pinv(x).dot(y)
-        Yfitted =  x.dot(betah)
-        resid   =  y - Yfitted
-        return betah, Yfitted, resid
-
-    def transform(self):
-        """
-
-        :return:
-        """
-        #TODO
-        betah, yfitted, resid = self._glm(self._x, self._y)
-        t, p =  self._t_test(betah, resid, self._x)
+# class VBMAnalyzer2(VBMAnalyzer):
+#     """
+#
+#     """
+#     #TODO
+#
+#     # http://nbviewer.ipython.org/github/practical-neuroimaging/pna-notebooks/blob/master/GLM_t_F.ipynb
+#     @staticmethod
+#     def _t_test(betah, resid, X):
+#         """
+#         test the parameters betah one by one - this assumes they are
+#         estimable (X full rank)
+#
+#         betah : (p, 1) estimated parameters
+#         resid : (n, 1) estimated residuals
+#         X : design matrix
+#         """
+#
+#         RSS = sum((resid)**2)
+#         n = resid.shape[0]
+#         q = np.linalg.matrix_rank(X)
+#         df = n-q
+#         MRSS = RSS/df
+#
+#         XTX = np.linalg.pinv(X.T.dot(X))
+#
+#         tval = np.zeros_like(betah)
+#         pval = np.zeros_like(betah)
+#
+#         for idx, beta in enumerate(betah):
+#             c = np.zeros_like(betah)
+#             c[idx] = 1
+#             t_num = c.T.dot(betah)
+#             SE = np.sqrt(MRSS* c.T.dot(XTX).dot(c))
+#             tval[idx] = t_num / SE
+#
+#             pval[idx] = 1.0 - t.cdf(tval[idx], df)
+#
+#         return tval, pval
+#
+#     @staticmethod
+#     def _glm(x, y):
+#         """A GLM function returning the estimated parameters and residuals
+#
+#         :param X:
+#         :param Y:
+#         :return:
+#         """
+#         betah   =  np.linalg.pinv(x).dot(y)
+#         Yfitted =  x.dot(betah)
+#         resid   =  y - Yfitted
+#         return betah, Yfitted, resid
+#
+#     def transform(self):
+#         """
+#
+#         :return:
+#         """
+#         #TODO
+#         betah, yfitted, resid = self._glm(self._x, self._y)
+#         t, p =  self._t_test(betah, resid, self._x)
 
 
 if __name__ == '__main__':
@@ -524,19 +547,22 @@ if __name__ == '__main__':
     file_dict, labels = get_files_for_comparison(gm_folder, comparison[1])
 
     from galton.vbm import VBMAnalyzer
+
     vbm = VBMAnalyzer()
-    vbm._extract_data(file_dict, mask_file, smooth_mm)
-    vbm._x = vbm._create_design_matrix()
-    vbm.glm_model = vbm._nipy_glm(vbm._x, vbm._y)
+    vbm.fit(file_dict, smooth_mm=smooth_mm, mask_file=mask_file,
+            regressors=None)
 
-    contrast_type = 't'
-    contrasts = vbm._create_group_contrasts(contrast_type)
+    corr_pval_vols = vbm.transform(contrast_type='t', correction_type='rf', alpha='0.04', kernel=[smooth_mm]*3)
 
-    #vbm = VBMAnalyzer().fit(file_dict, smooth_mm=smooth_mm, mask_file=mask_file,
-    #                        regressors=None)
-
-    #create image data matrix
-    #y, mask_indices, mask_shape = niftilist_mask_to_array(file_lst, maskfile)
-
-    #create data regressors
-    #x = vbm.create_design_matrix(labels, regressors=None)
+    # contrast_type = 't'
+    # contrasts = vbm._create_group_contrasts(contrast_type)
+    #
+    # vbm._contrasts = []
+    # for contrast_vector in contrasts:
+    #     vbm._contrasts.append(vbm.glm_model.contrast(contrast_vector,
+    #                                                  contrast_type=contrast_type))
+    #
+    # vbm.rf_correct(alpha='0.04', kernel=[smooth_mm]*3)
+    #
+    # pval_volumes = [vector_to_volume(corrp, vbm._mask_indices, vbm._mask_shape)
+    #                 for corrp in vbm._corrected_pvalues]

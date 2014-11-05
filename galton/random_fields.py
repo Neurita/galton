@@ -3,12 +3,12 @@ import numpy as np
 import scipy.stats as stats
 
 
-def rft_correct(image_data, pixdim=[2, 2, 2], kernel=[8, 8, 8], alpha=0.05):
+def rft_correct(stats_values, pixdim=[2, 2, 2], kernel=[8, 8, 8], alpha=0.05):
     """Random field correction of gauss smoothed data.
 
     Parameters
     ----------
-    image_data: np.ndarray
+    stats_values: np.ndarray
         Volume data array
 
     pixdim: array/list of ints or floats
@@ -25,7 +25,7 @@ def rft_correct(image_data, pixdim=[2, 2, 2], kernel=[8, 8, 8], alpha=0.05):
     p-values volume
     """
     # Non-zero voxels
-    num_nonzero_voxels = np.count_nonzero(image_data)
+    num_nonzero_voxels = np.count_nonzero(stats_values)
 
     # Voxel volume mm
     voxel_volume = np.prod(pixdim)
@@ -40,7 +40,7 @@ def rft_correct(image_data, pixdim=[2, 2, 2], kernel=[8, 8, 8], alpha=0.05):
     z_opt = normal_dist.ppf(1 - (alpha / n_resels))
 
     # Apply RFT statistical correction
-    pos_corr = image_data > z_opt
-    neg_corr = image_data < -z_opt
+    pos_corr = stats_values > z_opt
+    neg_corr = stats_values < -z_opt
 
-    return image_data * (pos_corr+neg_corr)
+    return stats_values * (pos_corr+neg_corr)
